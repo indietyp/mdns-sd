@@ -18,4 +18,4 @@ default = ["async"]
 flume = { version = "0.10", default-features = false }     # channel between threads
 log = "0.4.14"                                             # logging
 socket2 = { version = "0.3.19", features = ["reuseport"] } # socket APIs
-polling = "2.2"                                            # select/poll sockets
+polling = "2.1.0"                                          # select/poll sockets
