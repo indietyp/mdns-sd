@@ -145,14 +145,19 @@ use nix::{
         time::{TimeVal, TimeValLike},
     },
 };
+use polling::Poller;
+use socket2::Socket;
 use std::{
     any::Any,
     cmp,
     collections::{HashMap, HashSet},
     convert::TryInto,
     fmt,
-    os::unix::io::RawFd,
-    str, thread,
+    net::Ipv4Addr,
+    net::SocketAddrV4,
+    str,
+    task::Poll,
+    thread,
     time::SystemTime,
     vec,
 };
@@ -387,6 +392,13 @@ impl ServiceDaemon {
         loop {
             let mut read_fds = FdSet::new();
             read_fds.insert(zc.listen_socket);
+            if let Err(e) = zc
+                .poller
+                .add(&zc.listen_socket, polling::Event::readable(7))
+            {
+                error!("failed to add socket to poller: {}", e);
+                continue;
+            }
 
             // read incoming packets with a small timeout
             let mut timeout = TimeVal::milliseconds(10);
@@ -574,31 +586,26 @@ impl ServiceDaemon {
 
 /// Creates a new UDP socket to bind to `port` with REUSEPORT option.
 /// `non_block` indicates whether to set O_NONBLOCK for the socket.
-fn new_socket(port: u16, non_block: bool) -> Result<RawFd> {
-    let fd = socket(
-        AddressFamily::Inet,
-        SockType::Datagram,
-        SockFlag::empty(),
-        None,
-    )
-    .map_err(|e| e_fmt!("nix::sys::socket failed: {}", e))?;
+fn new_socket(port: u16, non_block: bool) -> Result<Socket> {
+    let fd = Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None)
+        .map_err(|e| e_fmt!("create socket failed: {}", e))?;
 
-    setsockopt(fd, sockopt::ReuseAddr, &true)
-        .map_err(|e| e_fmt!("nix::sys::setsockopt ReuseAddr failed: {}", e))?;
-    setsockopt(fd, sockopt::ReusePort, &true)
-        .map_err(|e| e_fmt!("nix::sys::setsockopt ReusePort failed: {}", e))?;
+    fd.set_reuse_address(true)
+        .map_err(|e| e_fmt!("set ReuseAddr failed: {}", e))?;
+    //    fd.set_reuse_port(true)
+    //        .map_err(|e| e_fmt!("nix::sys::setsockopt ReusePort failed: {}", e))?;
 
     if non_block {
-        fcntl::fcntl(fd, fcntl::FcntlArg::F_SETFL(fcntl::OFlag::O_NONBLOCK))
-            .map_err(|e| e_fmt!("nix::fcntl O_NONBLOCK: {}", e))?;
+        fd.set_nonblocking(true)
+            .map_err(|e| e_fmt!("set O_NONBLOCK: {}", e))?;
     }
 
-    let ipv4_any = IpAddr::new_v4(0, 0, 0, 0);
-    let inet_addr = InetAddr::new(ipv4_any, port);
-    bind(fd, &SockAddr::Inet(inet_addr))
-        .map_err(|e| e_fmt!("nix::sys::socket::bind failed: {}", e))?;
+    let ipv4_any = Ipv4Addr::new(0, 0, 0, 0);
+    let inet_addr = SocketAddrV4::new(ipv4_any, port);
+    fd.bind(&inet_addr.into())
+        .map_err(|e| e_fmt!("socket bind failed: {}", e))?;
 
-    debug!("new socket {} bind to {}", &fd, &inet_addr);
+    debug!("new socket bind to {}", &inet_addr);
     Ok(fd)
 }
 
@@ -646,10 +653,13 @@ struct Zeroconf {
     retransmissions: Vec<ReRun>,
 
     counters: Metrics,
+
+    poller: Poller,
 }
 
 impl Zeroconf {
     fn new(udp_port: u16) -> Result<Self> {
+        let poller = Poller::new().map_err(|e| e_fmt!("create Poller: {}", e))?;
         let listen_socket = new_socket(udp_port, true)?;
         debug!("created listening socket: {}", &listen_socket);
 
@@ -677,6 +687,7 @@ impl Zeroconf {
             instances_to_resolve: HashMap::new(),
             retransmissions: Vec::new(),
             counters: HashMap::new(),
+            poller,
         })
     }
 
