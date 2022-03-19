@@ -576,8 +576,9 @@ fn new_socket(port: u16, non_block: bool) -> Result<Socket> {
 
     fd.set_reuse_address(true)
         .map_err(|e| e_fmt!("set ReuseAddr failed: {}", e))?;
-    //    fd.set_reuse_port(true)
-    //        .map_err(|e| e_fmt!("nix::sys::setsockopt ReusePort failed: {}", e))?;
+    #[cfg(unix)] // this is currently restricted to Unix's in socket2
+    fd.set_reuse_port(true)
+        .map_err(|e| e_fmt!("set ReusePort failed: {}", e))?;
 
     if non_block {
         fd.set_nonblocking(true)
