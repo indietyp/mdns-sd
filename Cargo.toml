@@ -15,7 +15,7 @@ async = ["flume/async"]
 default = ["async"]
 
 [dependencies]
-flume = { version = "0.10", default-features = false } # channel between threads
-log = "0.4.14"                                         # logging
-socket2 = "0.3.19"                                     # socket APIs
-polling = "2.2"                                        # select/poll sockets
+flume = { version = "0.10", default-features = false }     # channel between threads
+log = "0.4.14"                                             # logging
+socket2 = { version = "0.3.19", features = ["reuseport"] } # socket APIs
+polling = "2.2"                                            # select/poll sockets
