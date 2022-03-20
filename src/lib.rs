@@ -868,7 +868,9 @@ impl Zeroconf {
         let (sz, src_addr) = match sockfd.recv_from(&mut buf) {
             Ok((sz, addr)) => (sz, addr),
             Err(e) => {
-                error!("recvfrom failed: {}", e);
+                if e.kind() != std::io::ErrorKind::WouldBlock {
+                    error!("recvfrom failed: {}", e);
+                }
                 return false;
             }
         };
