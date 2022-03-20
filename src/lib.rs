@@ -389,12 +389,14 @@ impl ServiceDaemon {
         loop {
             events.clear();
             match zc.poller.wait(&mut events, Some(timeout)) {
-                Ok(_) => {
-                    // Read until no more packets available.
-                    loop {
-                        let rc = zc.handle_read();
-                        if !rc {
-                            break;
+                Ok(count) => {
+                    if count > 0 {
+                        // Read until no more packets available.
+                        loop {
+                            let rc = zc.handle_read();
+                            if !rc {
+                                break;
+                            }
                         }
                     }
                     if let Err(e) = zc
